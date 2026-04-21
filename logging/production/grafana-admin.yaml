@@ -10,4 +10,4 @@ metadata:
   namespace: logging
 type: Opaque
 data:
-  admin-password: REPLACE_WITH_BASE64_OF_GRAFANA_ADMIN_PASSWORD
+  admin-password: akhHNE1XUUJMSVpiQ0JWN1pBQmI2MHRpQ3o0TEg1bXk=
