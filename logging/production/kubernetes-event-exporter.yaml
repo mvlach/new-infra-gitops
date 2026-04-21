@@ -1,19 +1,20 @@
-# eventrouter: reads Kubernetes events from the API and writes them as
-# JSON to stdout. Vector's kubernetes_logs source then picks them up and
-# routes them to the logs.k8s_events ClickHouse table (see vector-config.yaml).
+# kubernetes-event-exporter: reads Kubernetes events from the API and writes
+# them as JSON to stdout. Vector's kubernetes_logs source then picks them up
+# and routes them to the logs.k8s_events ClickHouse table (see vector-config.yaml).
 #
-# Upstream: https://github.com/heptiolabs/eventrouter
+# Upstream: https://github.com/resmoio/kubernetes-event-exporter
+# Replaces the older heptio/eventrouter (gcr.io registry was retired).
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: eventrouter
+  name: kubernetes-event-exporter
   namespace: logging
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: eventrouter
+  name: kubernetes-event-exporter
 rules:
   - apiGroups: [""]
     resources: ["events"]
@@ -22,50 +23,57 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: eventrouter
+  name: kubernetes-event-exporter
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: eventrouter
+  name: kubernetes-event-exporter
 subjects:
   - kind: ServiceAccount
-    name: eventrouter
+    name: kubernetes-event-exporter
     namespace: logging
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: eventrouter-config
+  name: kubernetes-event-exporter-config
   namespace: logging
 data:
-  config.json: |
-    {
-      "sink": "stdout"
-    }
+  config.yaml: |
+    logLevel: info
+    logFormat: json
+    route:
+      routes:
+        - match:
+            - receiver: "stdout"
+    receivers:
+      - name: "stdout"
+        file:
+          path: "/dev/stdout"
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: eventrouter
+  name: kubernetes-event-exporter
   namespace: logging
   labels:
-    app: eventrouter
+    app: kubernetes-event-exporter
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: eventrouter
+      app: kubernetes-event-exporter
   template:
     metadata:
       labels:
-        app: eventrouter
+        app: kubernetes-event-exporter
     spec:
-      serviceAccountName: eventrouter
+      serviceAccountName: kubernetes-event-exporter
       containers:
-        - name: eventrouter
-          image: gcr.io/heptio-images/eventrouter:v0.3
+        - name: event-exporter
+          image: ghcr.io/resmoio/kubernetes-event-exporter:v1.7
           imagePullPolicy: IfNotPresent
-          args: ["-v", "3", "-log_dir", "/tmp"]
+          args: ["-conf=/etc/event-exporter/config.yaml"]
           resources:
             requests:
               cpu: 20m
@@ -74,8 +82,8 @@ spec:
               memory: 128Mi
           volumeMounts:
             - name: config
-              mountPath: /etc/eventrouter
+              mountPath: /etc/event-exporter
       volumes:
         - name: config
           configMap:
-            name: eventrouter-config
+            name: kubernetes-event-exporter-config
