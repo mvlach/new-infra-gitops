@@ -28,19 +28,52 @@ data:
           events: '.kubernetes.pod_labels.app == "kubernetes-event-exporter"'
 
       # Shape pod logs to match logs.pod_logs schema.
+      # If the raw message is a JSON object (logstash-logback-encoder /
+      # Spring Boot structured logging), promote the structured fields
+      # (level, logger, thread, trace/span id, stack_trace) into top-level
+      # columns; otherwise leave those columns empty.
       pod_logs_shape:
         type: remap
         inputs: [route_by_source._unmatched]
         source: |
+          raw_msg = string!(.message || "")
+          k = object!(.kubernetes || {})
+
+          level       = ""
+          logger      = ""
+          thread      = ""
+          trace_id    = ""
+          span_id     = ""
+          stack_trace = ""
+          msg         = raw_msg
+
+          parsed, err = parse_json(raw_msg)
+          if err == null && is_object(parsed) {
+              p = object!(parsed)
+              level       = to_string(p.level          || "") ?? ""
+              logger      = to_string(p.logger_name    || p.logger   || "") ?? ""
+              thread      = to_string(p.thread_name    || p.thread   || "") ?? ""
+              trace_id    = to_string(p.traceId        || p.trace_id || "") ?? ""
+              span_id     = to_string(p.spanId         || p.span_id  || "") ?? ""
+              stack_trace = to_string(p.stack_trace    || "") ?? ""
+              msg         = to_string(p.message        || raw_msg) ?? raw_msg
+          }
+
           . = {
-              "timestamp":  .timestamp,
-              "namespace":  string!(.kubernetes.pod_namespace || ""),
-              "pod":        string!(.kubernetes.pod_name || ""),
-              "container":  string!(.kubernetes.container_name || ""),
-              "node":       string!(.kubernetes.pod_node_name || ""),
-              "stream":     string!(.stream || ""),
-              "message":    string!(.message || ""),
-              "labels":     object!(.kubernetes.pod_labels || {})
+              "timestamp":   .timestamp,
+              "namespace":   string!(k.pod_namespace || ""),
+              "pod":         string!(k.pod_name      || ""),
+              "container":   string!(k.container_name || ""),
+              "node":        string!(k.pod_node_name  || ""),
+              "stream":      string!(.stream || ""),
+              "message":     msg,
+              "level":       level,
+              "logger":      logger,
+              "thread":      thread,
+              "trace_id":    trace_id,
+              "span_id":     span_id,
+              "stack_trace": stack_trace,
+              "labels":      object!(k.pod_labels || {})
           }
 
       # Shape kubernetes-event-exporter JSON into logs.k8s_events schema.
