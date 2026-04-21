@@ -19,12 +19,13 @@ data:
     # -------------------------------------------------------------------------
     transforms:
       # Split kubernetes_logs into two streams: regular pod logs, and
-      # events produced by the eventrouter pod (which we read as logs too).
+      # JSON events produced by kubernetes-event-exporter (which we read
+      # as logs too).
       route_by_source:
         type: route
         inputs: [k8s_logs]
         route:
-          events: '.kubernetes.pod_labels.app == "eventrouter"'
+          events: '.kubernetes.pod_labels.app == "kubernetes-event-exporter"'
 
       # Shape pod logs to match logs.pod_logs schema.
       pod_logs_shape:
@@ -42,17 +43,19 @@ data:
               "labels":     object!(.kubernetes.pod_labels || {})
           }
 
-      # Shape eventrouter JSON into logs.k8s_events schema.
-      # eventrouter emits one JSON doc per event to stdout.
+      # Shape kubernetes-event-exporter JSON into logs.k8s_events schema.
+      # Each line on stdout is one JSON doc; fields are at the top level,
+      # with `involvedObject` nested. See
+      # https://github.com/resmoio/kubernetes-event-exporter#data-format
       events_parse:
         type: remap
         inputs: [route_by_source.events]
         source: |
-          parsed, err = parse_json(.message)
+          ev, err = parse_json(.message)
           if err != null {
               abort
           }
-          ev = object!(parsed.event || {})
+          ev = object!(ev || {})
           involved = object!(ev.involvedObject || {})
           . = {
               "timestamp": .timestamp,

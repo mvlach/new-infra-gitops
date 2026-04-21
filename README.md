@@ -20,7 +20,7 @@ new-infra-gitops/
         ├── vector-rbac.yaml
         ├── vector-config.yaml          # Vector pipeline (sources/transforms/sinks)
         ├── vector-daemonset.yaml
-        ├── eventrouter.yaml            # K8s events → stdout → picked up by Vector
+        ├── kubernetes-event-exporter.yaml  # K8s events → stdout → picked up by Vector
         └── grafana.yaml                # Deployment + Service + Ingress + PVC
 ```
 
