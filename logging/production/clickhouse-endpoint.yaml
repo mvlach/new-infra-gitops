@@ -1,0 +1,12 @@
+# Endpoint of the ClickHouse VM (see new-infra/infrastructure/05-clickhouse).
+# Replace 10.0.1.10 with the actual private IP from `terraform output
+# clickhouse_private_ip` after provisioning.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-endpoint
+  namespace: logging
+data:
+  host: "10.0.1.10"
+  http_port: "8123"
+  native_port: "9000"

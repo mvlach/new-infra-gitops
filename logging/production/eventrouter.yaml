@@ -1,0 +1,81 @@
+# eventrouter: reads Kubernetes events from the API and writes them as
+# JSON to stdout. Vector's kubernetes_logs source then picks them up and
+# routes them to the logs.k8s_events ClickHouse table (see vector-config.yaml).
+#
+# Upstream: https://github.com/heptiolabs/eventrouter
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eventrouter
+  namespace: logging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: eventrouter
+rules:
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "watch", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: eventrouter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: eventrouter
+subjects:
+  - kind: ServiceAccount
+    name: eventrouter
+    namespace: logging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eventrouter-config
+  namespace: logging
+data:
+  config.json: |
+    {
+      "sink": "stdout"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eventrouter
+  namespace: logging
+  labels:
+    app: eventrouter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eventrouter
+  template:
+    metadata:
+      labels:
+        app: eventrouter
+    spec:
+      serviceAccountName: eventrouter
+      containers:
+        - name: eventrouter
+          image: gcr.io/heptio-images/eventrouter:v0.3
+          imagePullPolicy: IfNotPresent
+          args: ["-v", "3", "-log_dir", "/tmp"]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/eventrouter
+      volumes:
+        - name: config
+          configMap:
+            name: eventrouter-config

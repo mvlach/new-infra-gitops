@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector-config
+  namespace: logging
+data:
+  vector.yaml: |
+    # -------------------------------------------------------------------------
+    # Sources
+    # -------------------------------------------------------------------------
+    sources:
+      # Container stdout/stderr from every pod on every node.
+      k8s_logs:
+        type: kubernetes_logs
+        # default self_node_name via Downward API env, see DaemonSet spec.
+
+    # -------------------------------------------------------------------------
+    # Transforms
+    # -------------------------------------------------------------------------
+    transforms:
+      # Split kubernetes_logs into two streams: regular pod logs, and
+      # events produced by the eventrouter pod (which we read as logs too).
+      route_by_source:
+        type: route
+        inputs: [k8s_logs]
+        route:
+          events: '.kubernetes.pod_labels.app == "eventrouter"'
+
+      # Shape pod logs to match logs.pod_logs schema.
+      pod_logs_shape:
+        type: remap
+        inputs: [route_by_source._unmatched]
+        source: |
+          . = {
+              "timestamp":  .timestamp,
+              "namespace":  string!(.kubernetes.pod_namespace || ""),
+              "pod":        string!(.kubernetes.pod_name || ""),
+              "container":  string!(.kubernetes.container_name || ""),
+              "node":       string!(.kubernetes.pod_node_name || ""),
+              "stream":     string!(.stream || ""),
+              "message":    string!(.message || ""),
+              "labels":     object!(.kubernetes.pod_labels || {})
+          }
+
+      # Shape eventrouter JSON into logs.k8s_events schema.
+      # eventrouter emits one JSON doc per event to stdout.
+      events_parse:
+        type: remap
+        inputs: [route_by_source.events]
+        source: |
+          parsed, err = parse_json(.message)
+          if err != null {
+              abort
+          }
+          ev = object!(parsed.event || {})
+          involved = object!(ev.involvedObject || {})
+          . = {
+              "timestamp": .timestamp,
+              "namespace": string!(involved.namespace || ""),
+              "name":      string!(involved.name || ""),
+              "reason":    string!(ev.reason || ""),
+              "type":      string!(ev.type || ""),
+              "kind":      string!(involved.kind || ""),
+              "message":   string!(ev.message || "")
+          }
+
+    # -------------------------------------------------------------------------
+    # Sinks
+    # -------------------------------------------------------------------------
+    sinks:
+      clickhouse_pod_logs:
+        type: clickhouse
+        inputs: [pod_logs_shape]
+        endpoint: "http://${CLICKHOUSE_HOST}:8123"
+        database: logs
+        table: pod_logs
+        compression: gzip
+        date_time_best_effort: true
+        skip_unknown_fields: true
+        auth:
+          strategy: basic
+          user: vector
+          password: "${CLICKHOUSE_VECTOR_PASSWORD}"
+        batch:
+          max_events: 10000
+          timeout_secs: 5
+        request:
+          retry_attempts: 5
+        buffer:
+          type: disk
+          max_size: 536870912   # 512 MiB
+          when_full: block
+
+      clickhouse_k8s_events:
+        type: clickhouse
+        inputs: [events_parse]
+        endpoint: "http://${CLICKHOUSE_HOST}:8123"
+        database: logs
+        table: k8s_events
+        compression: gzip
+        date_time_best_effort: true
+        skip_unknown_fields: true
+        auth:
+          strategy: basic
+          user: vector
+          password: "${CLICKHOUSE_VECTOR_PASSWORD}"
+        batch:
+          max_events: 1000
+          timeout_secs: 10
+        buffer:
+          type: disk
+          max_size: 67108864    # 64 MiB
+          when_full: block
