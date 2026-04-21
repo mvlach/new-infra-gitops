@@ -110,7 +110,9 @@ data:
         batch:
           max_events: 1000
           timeout_secs: 10
+        # In-memory buffer: events are low volume and disk buffer has a
+        # 256 MiB minimum which is overkill for this stream.
         buffer:
-          type: disk
-          max_size: 67108864    # 64 MiB
+          type: memory
+          max_events: 5000
           when_full: block
