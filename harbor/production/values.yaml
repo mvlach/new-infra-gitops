@@ -1,0 +1,61 @@
+# Harbor Helm values
+# Chart: https://helm.goharbor.io (goharbor/harbor-helm)
+# Applied by the ArgoCD Application defined in
+#   new-infra/infrastructure/06-argocd-apps/apps/harbor.yaml
+
+expose:
+  type: ingress
+  tls:
+    enabled: true
+    certSource: secret
+    secret:
+      secretName: harbor-individualstartup-cz-tls
+  ingress:
+    hosts:
+      core: harbor.individualstartup.cz
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/proxy-body-size: "0"
+      nginx.ingress.kubernetes.io/proxy-buffering: "off"
+      nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+
+externalURL: https://harbor.individualstartup.cz
+
+# Generate with:   openssl rand -base64 24
+# Keep in sync with new-infra/password.
+harborAdminPassword: "4RPvXRclqR99b5heuBm6IFge/aSimW/y"
+
+# v2.6+ Notary je deprecated; Harbor má nativní Cosign support pro image signing.
+notary:
+  enabled: false
+
+# hcloud-volumes storage class je nainstalovaný hetzner-k3s CSI driverem.
+persistence:
+  persistentVolumeClaim:
+    registry:
+      storageClass: hcloud-volumes
+      accessMode: ReadWriteOnce
+      size: 20Gi
+    jobservice:
+      jobLog:
+        storageClass: hcloud-volumes
+        accessMode: ReadWriteOnce
+        size: 1Gi
+    database:
+      storageClass: hcloud-volumes
+      accessMode: ReadWriteOnce
+      size: 5Gi
+    redis:
+      storageClass: hcloud-volumes
+      accessMode: ReadWriteOnce
+      size: 1Gi
+    trivy:
+      storageClass: hcloud-volumes
+      accessMode: ReadWriteOnce
+      size: 5Gi
+
+trivy:
+  enabled: true
+
+logLevel: info
