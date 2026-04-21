@@ -15,36 +15,14 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: kubernetes-event-exporter
+# Read-only on everything. event-exporter enriches each event with metadata
+# of the involvedObject (Pod, Deployment, ArgoCD Application, etc.) — if we
+# list just core/apps/batch it will spam forbidden errors for any CRD. Since
+# this is a read-only observability tool, a cluster-wide view is simpler
+# and matches the intent.
 rules:
-  # Events themselves.
-  - apiGroups: [""]
-    resources: ["events"]
-    verbs: ["get", "watch", "list"]
-  # Object enrichment: event-exporter reads metadata of the involvedObject
-  # of each event (Pod, Deployment, Job, Node, …) so it can add labels and
-  # owner references to the emitted JSON. Without read access on these it
-  # spams "forbidden" errors in its logs.
-  - apiGroups: [""]
-    resources:
-      - pods
-      - services
-      - nodes
-      - namespaces
-      - replicationcontrollers
-      - persistentvolumeclaims
-      - persistentvolumes
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["apps"]
-    resources:
-      - deployments
-      - daemonsets
-      - replicasets
-      - statefulsets
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["batch"]
-    resources:
-      - jobs
-      - cronjobs
+  - apiGroups: ["*"]
+    resources: ["*"]
     verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
